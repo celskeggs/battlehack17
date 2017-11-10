@@ -61,14 +61,17 @@ for state in game.turns():
     # Your Code will run within this loop
     for entity in state.get_entities(team=state.my_team): 
         # This line gets all the bots on your team
-        if(state.turn % 50 == 0):
-            for direction in battlecode.Direction.directions():
-                if entity.can_build(direction):
-                    entity.queue_build(direction)
+        if(len(list(entity.entities_within_adjacent_distance(1))) >= 6):
+            continue
         #print("GO OG OG ")
         my_location = entity.location
         near_entities = entity.entities_within_adjacent_distance(1)
         near_entities = list(filter(lambda x: x.can_be_picked, near_entities))
+
+        if(state.turn % 50 == 0):
+            for direction in battlecode.Direction.directions():
+                if entity.can_build(direction):
+                    entity.queue_build(direction)
 
         picked = False
         for pickup_entity in entity.entities_within_adjacent_distance(1):
@@ -97,6 +100,7 @@ for state in game.turns():
                         thrown = True
                 if(thrown):
                     break 
+            
 
         moved = False
         far_ops = furthest_opponents(state, entity)
@@ -123,6 +127,10 @@ for state in game.turns():
                     
             if(moved):
                 break
+        #if(not moved):
+            #    entity.queue_disintegrate()
+
+        
         
 
         
