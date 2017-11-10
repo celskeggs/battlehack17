@@ -168,26 +168,39 @@ for state in game.turns():
             if to_pick_up is not None:
                 unit.queue_pickup(state.map._occupied[to_pick_up])
             elif do_we_have_something_to_attack:
-                pass  # TODO
+                for adjacent in fast_adjacent_entities(state, unit.location):
+                    if unit.can_pickup(adjacent):
+                        unit.queue_pickup(adjacent)
         else:
             smallest = 8
             best_target = None
             smallest_linear = 8
             best_linear = None
+            should_back_up_from = None
             for target in attack_targets:
                 dist = unit.location.adjacent_distance_to(target)
                 if dist == 0:
                     continue
-                if dist < smallest:
+                if 2 <= dist < smallest:
                     smallest = dist
                     best_target = target
-                if dist < smallest_linear and is_in_diagonal(unit.location, target):
+                if 2 <= dist < smallest_linear and is_in_diagonal(unit.location, target):
                     smallest_linear = dist
                     best_linear = target
+                if dist == 1:
+                    should_back_up_from = target
             if best_linear is not None:
                 direction = unit.location.direction_to(best_linear)
                 if unit.can_throw(direction):
                     unit.queue_throw(direction)
+            elif should_back_up_from is not None:
+                direction = unit.location.direction_to(should_back_up_from).rotate_opposite()
+                if unit.can_move(direction):
+                    unit.queue_move(direction)
+                elif unit.can_move(direction.rotate_left()):
+                    unit.queue_move(direction.rotate_left())
+                elif unit.can_move(direction.rotate_right()):
+                    unit.queue_move(direction.rotate_right())
             elif best_target is not None:
                 direction = unit.location.direction_to(best_target)
                 if unit.can_move(direction.rotate_left()):
@@ -197,12 +210,12 @@ for state in game.turns():
             else:
                 for direction in Direction.directions():
                     land_at = unit.location + (direction.dx * 7, direction.dy * 7)
-                    if (state.map.tile_at(land_at) == "G") == (unit.holding.team == state.my_team):
+                    if state.map.location_on_map(land_at) and (state.map.tile_at(land_at) == "G") == (unit.holding.team == state.my_team):
                         if unit.can_throw(direction):
                             unit.queue_throw(direction)
                             break
 
-    # motion away from others
+    # motion away from others if we haven't done anything else
     for unit in available_units:
         if unit.can_act:
             for direction in Direction.directions():
