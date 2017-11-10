@@ -107,8 +107,8 @@ for state in game.turns():
                             unit.queue_build(direction)
                             build_queued = True
                             break
-                    else:
-                        print("can't build")
+#                    else:
+#                        print("can't build")
                 if build_queued:
                     break
             if not build_queued:
@@ -132,25 +132,7 @@ for state in game.turns():
             if remaining[best_goal] == 0:
                 del remaining[best_goal]
 
-    print(unit_directives)
-
-    # have units actually move
-    for unit, goal in unit_directives:
-        if unit.location == goal:
-            continue
-        direction = unit.location.direction_to(goal)
-#        print("trying to move towards directive")
-        if not unit.can_act:
-            pass
-#            print("can't act")
-        if unit.can_move(direction):
-            unit.queue_move(direction)
-        elif unit.can_move(direction.rotate_counter_clockwise_degrees(45)):
-            unit.queue_move(direction.rotate_counter_clockwise_degrees(45))
-        elif unit.can_move(direction.rotate_counter_clockwise_degrees(315)):
-            unit.queue_move(direction.rotate_counter_clockwise_degrees(315))
-#        else:
-#            print("but could not: %s -> %s (direction %s,%s)" % (unit.location, goal, direction.dx, direction.dy))
+#    print(unit_directives)
 
     # attack loop
     for unit in available_units:
@@ -214,6 +196,24 @@ for state in game.turns():
                         if unit.can_throw(direction):
                             unit.queue_throw(direction)
                             break
+
+    # have units actually move
+    for unit, goal in unit_directives:
+        if unit.location == goal:
+            continue
+        direction = unit.location.direction_to(goal)
+#        print("trying to move towards directive")
+        if not unit.can_act:
+            pass
+#            print("can't act")
+        if unit.can_move(direction):
+            unit.queue_move(direction)
+        elif unit.can_move(direction.rotate_counter_clockwise_degrees(45)):
+            unit.queue_move(direction.rotate_counter_clockwise_degrees(45))
+        elif unit.can_move(direction.rotate_counter_clockwise_degrees(315)):
+            unit.queue_move(direction.rotate_counter_clockwise_degrees(315))
+#        else:
+#            print("but could not: %s -> %s (direction %s,%s)" % (unit.location, goal, direction.dx, direction.dy))
 
     # motion away from others if we haven't done anything else
     for unit in available_units:
