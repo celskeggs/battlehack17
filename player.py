@@ -5,8 +5,18 @@ import random
 game = battlecode.Game('player')
 start = time.clock()
 
+DIRS = [Direction.SOUTH_WEST, Direction.SOUTH,
+                Direction.SOUTH_EAST, Direction.EAST,
+                Direction.NORTH_EAST, Direction.NORTH,
+                Direction.NORTH_WEST, Direction.WEST]
+
+def directions_rand():
+    random.shuffle(DIRS)
+    return list(DIRS)
+
+
 def fast_adjacent_entities(state, location):
-    for direction in Direction.directions():
+    for direction in directions_rand():
         nloc = location.adjacent_location_in_direction(direction)
         if nloc in state.map._occupied:
             yield state.map._occupied[nloc]
@@ -46,7 +56,7 @@ def calculate_broad_goals(state):
             build_queued = False
             for unit in units_by_sector[sector.top_left]:
                 if not unit.can_act: continue
-                for direction in Direction.directions():
+                for direction in directions_rand():
                     if unit.can_build(direction): # TODO: make sure they build in THIS sector
                         if (state.map.sector_at(unit.location.adjacent_location_in_direction(direction)) == sector):
                             unit.queue_build(direction)
@@ -119,7 +129,7 @@ def plan_attacks(state, available_units, attack_targets):
                 elif unit.can_move(direction.rotate_right()):
                     unit.queue_move(direction.rotate_right())
             else:
-                for direction in Direction.directions():
+                for direction in directions_rand():
                     land_at = unit.location + (direction.dx * 7, direction.dy * 7)
                     if state.map.location_on_map(land_at) and (state.map.tile_at(land_at) == "G") == (unit.holding.team == state.my_team):
                         if unit.can_throw(direction):
@@ -165,7 +175,7 @@ def move_units(state, available_units, unit_directives):
     # motion away from others if we haven't done anything else
     for unit in available_units:
         if unit.can_act:
-            for direction in Direction.directions():
+            for direction in directions_rand():
                 found = state.map._occupied.get(unit.location.adjacent_location_in_direction(direction.rotate_opposite()),None)
                 if found and found.team == state.my_team:
                     if unit.can_move(direction):
