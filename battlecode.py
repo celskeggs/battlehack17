@@ -815,7 +815,7 @@ class Location(tuple):
         Returns:
             float: Distance squared to the location
         '''
-        return max(abs(self.x-location.x), abs(self.x-location.y))
+        return max(abs(self.x-location.x), abs(self.y-location.y))
 
     def direction_to(self, location):
         '''
@@ -1251,7 +1251,7 @@ class Game(object):
                 if result['reason'].startswith('wrong turn'):
                     sys.stderr.write('Battlecode warning: missed turn, speed up your code!\n')
                 else:
-                    raise BattlecodeError(result['reason'])
+                    sys.stderr.write("Battlecode error: %s" % result['reason'])
             elif result['command'] == 'missedTurn':
                 sys.stderr.write('Battlecode warning: missed turn {}, speed up your code!\n'.format(result['turn']))
                 self._missed_turns.add(result['turn'])

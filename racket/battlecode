@@ -1,0 +1,285 @@
+#lang racket
+(require racket/tcp)
+(require json)
+(require racket/async-channel)
+
+(define server (or (getenv "BATTLECODE_IP") "localhost"))
+
+(define (open-server)
+  (let-values (((input output) (tcp-connect server 6147)))
+    (file-stream-buffer-mode input 'none)
+    (file-stream-buffer-mode output 'line)
+    (values input output)))
+
+(define (write-command output data)
+  (let ((outdata (string-append (jsexpr->string data) "\n")))
+    (display outdata)
+    (write outdata output)))
+
+(define (read-messages-to-channel port channel)
+  (display "start receiving")
+  (display "first char" (read-char port))
+  (let ((line (read-line port)))
+    (display "received line" line)
+    (if (eof-object? line)
+        (async-channel-put channel null)
+        (let* ((message (string->jsexpr line))
+               (command (hash-ref message 'command)))
+          (case command
+            (("error")
+             (if (string-prefix? (hash-ref message 'reason) "wrong turn")
+                 (print "warning: missed a turn! speed up our code.")
+                 (error (hash-ref message 'reason))))
+            (("missedTurn")
+             (print "warning: missed a turn! speed up our code."))
+            (else
+             (async-channel-put channel message)))
+          (read-messages-to-channel port channel)))))
+
+(define (check-command message command)
+  (if (eqv? (hash-ref message 'command) command)
+      message
+      (error "not a message of type" command)))
+
+(define (init-game name pull push)
+  (push (hash 'command "login" 'name name)); 'key (getenv "BATTLECODE_PLAYER_KEY")))
+  (define login-confirm (check-command (pull #t) "loginConfirm"))
+  (define start (check-command (pull #t) "start"))
+  (values (hash-ref login-confirm 'teamID)
+          (make-immutable-hasheq (map (lambda (team)
+                                        (cons (hash-ref team 'teamID)
+                                              (hash-ref team 'name)))
+                                      (hash-ref login-confirm 'teams)))
+          (hash-ref start 'initialState)))
+
+(define directions '(southwest south southeast east northeast north northwest west))
+
+(struct entity
+  ([state]
+   [id]
+   [type]
+   [team-id]
+   [hp #:mutable]
+   [location #:mutable] ; (cons x y)
+   [cooldown-end #:mutable]
+   [holding-end #:mutable]
+   [held-by #:mutable]
+   [holding #:mutable]
+   ))
+
+(define (build-entity state data)
+  (entity state
+          (hash-ref data 'id)
+          (hash-ref data 'type)
+          (hash-ref data 'teamID)
+          #f))
+
+(define (entity-equal? enta entb)
+  (= (entity-id enta) (entity-id entb)))
+
+(define (entity-update-state entity data)
+  (remove-from-occupants! (state-map (entity-state entity)) (entity-location entity) entity)
+  (set-entity-hp! entity (hash-ref data 'hp))
+  (let ((location (hash-ref entity 'location)))
+    (set-entity-location! entity (cons (hash-ref location 'x) (hash-ref location 'y))))
+  (set-entity-cooldown-end! (hash-ref data 'cooldownEnd #f))
+  (set-entity-holding-end! (hash-ref data 'holdingEnd #f))
+  (if (hash-has-key? data 'heldBy)
+      (set-entity-held-by! (hash-ref data 'heldBy))
+      (begin (set-entity-held-by! #f)
+             (add-to-occupants! (state-map (entity-state entity)) (entity-location entity) entity)))
+  (set-entity-holding! (hash-ref data 'holding #f)))
+
+(struct world-map
+  ([width]
+   [height]
+   [tiles]
+   [sector-size]
+   [sector-teams]
+   [occupants]))
+
+(define (build-map initial-state)
+  (world-map (hash-ref initial-state 'width)
+             (hash-ref initial-state 'height)
+             (hash-ref initial-state 'tiles)
+             (hash-ref initial-state 'sectorSize)
+             (hash)
+             (hash)))
+
+(define (on-map? map location)
+  (and (>= (car location) 0)
+       (>= (cdr location) 0)
+       (< (car location) (world-map-width map))
+       (< (cdr location) (world-map-height map))))
+
+(define (remove-from-occupants! map location entity)
+  (if (and (hash-has-key? (world-map-occupants map) location) (entity-equal? (hash-ref (world-map-occupants map) location) entity))
+      (hash-remove! (world-map-occupants map) location)
+      #f))
+
+(define (add-to-occupants! map location entity)
+  (hash-set! (world-map-occupants map) location entity))
+
+(define (occupied? map location)
+  (hash-has-key? (world-map-occupants map) location))
+
+(define (xy-to-sector-key map x y)
+  (cons (- x (remainder x (world-map-sector-size map)))
+        (- y (remainder y (world-map-sector-size map)))))
+
+(define (state-update-sectors state data)
+  (define map (state-map state))
+  (for ((sector-data data))
+    (let ((topleft (hash-ref sector-data 'topLeft)))
+      (hash-set! (world-map-sector-teams map) (xy-to-sector-key map (hash-ref topleft 'x) (hash-ref topleft 'y))
+                 (hash-ref sector-data 'controllingTeamID)))))
+
+(struct state
+  ([team-id]
+   [team-names]
+   [pull]
+   [push]
+   [map]
+   [turn-id #:mutable]
+   [act-queue #:mutable]
+   [done #:mutable]
+   [entities]))
+
+(define (state-entity-list state)
+  (hash-values (state-entities state)))
+
+(define (state-update-entities state data)
+  (for ((entity data))
+    (let ((id (hash-ref entity 'id)))
+      (if (not (hash-has-key? (state-entities state) id))
+          (hash-set! (state-entities state) (entity state))
+          #f)
+      (entity-update-state (hash-ref (state-entities state) id) entity))))
+
+(define (state-kill-entities state data)
+  (for ((dead data))
+    (let ((entity (hash-ref (state-entities state) dead)))
+      (remove-from-occupants! (state-map state) (entity-location entity) entity))
+    (hash-remove! (state-entities state) dead)))
+
+(define (build-state team-id team-names pull-queue push-queue initial-state)
+  (define new-state (state team-id team-names pull-queue push-queue
+                           (build-map initial-state) #f null #f (make-hash)))
+  (state-update-entities new-state (hash-ref initial-state 'entities))
+  (state-update-sectors new-state (hash-ref initial-state 'sectors)))
+
+(define (await-turn-i state should-block)
+  (let ((next-packet ((state-pull state should-block))))
+    (cond [(false? next-packet) null] ; used when we aren't blocking
+          [(null? next-packet) (set-state-done! state #t)]
+          [(eqv? (hash-ref next-packet 'command) 'keyframe)
+           ; (state-validate-keyframe state next-packet) TODO: actually validate
+           (await-turn-i state #t)]
+          [(eqv? (hash-ref next-packet 'command) 'nextTurn)
+           (state-update-entities state (hash-ref next-packet 'changed))
+           (state-kill-entities state (hash-ref next-packet 'dead))
+           (state-update-sectors state (hash-ref next-packet 'changedSectors))
+           (set-state-turn-id! state (+ (hash-ref next-packet 'turn) 1))
+           (if (hash-has-key? next-packet 'winnerID)
+               (set-state-done! state #t)
+               (if (eqv? (hash-ref next-packet 'nextTeamID) (state-team-id state))
+                   (await-turn-i state #f)
+                   (await-turn-i state #t)))])))
+
+(define (await-turn state)
+  (await-turn-i state #t))
+
+(define (submit-turn state)
+  ((state-push state) (hasheq 'command "makeTurn"
+                              'turn (state-turn-id state)
+                              'actions (reverse (state-act-queue state))))
+  (set-state-act-queue! state '()))
+
+(define (queue-action state action)
+  (set-state-act-queue! (cons action (state-act-queue state))))
+                   
+(define (run-player name body)
+  (let*-values (((input output) (open-server))
+                ((recv-queue) (make-async-channel))
+                ((pull-queue) (lambda (block) ((if block async-channel-get async-channel-try-get) recv-queue)))
+                ((push-queue) (lambda (command) (write-command output command))))
+    (display (list "started" input output))
+    (thread (lambda () (read-messages-to-channel input recv-queue)))
+    (let-values (((team-id team-names initial-state) (init-game name pull-queue push-queue)))
+      (let ((state (build-state team-id team-names pull-queue push-queue initial-state)))
+        (await-turn state)
+        (body state (lambda () (submit-turn state) (await-turn state) (not (state-done state))))))))
+
+; sample player
+
+(define (bot-cooldown bot)
+  (let ((end (entity-cooldown-end bot)))
+    (if (or (false? end) (<= end (state-turn-id (entity-state bot))))
+        0
+        (- end (state-turn-id (entity-state bot))))))
+
+(define (is-bot? entity)
+  (equal? (entity-type entity) "thrower"))
+
+(define (bot-can-act? bot)
+  (and (= (bot-cooldown bot) 0)
+       (is-bot? bot)
+       (false? (entity-held-by bot))))
+
+(define (direction->dxy direction)
+  (case direction
+    [(south) (values 0 -1)]
+    [(north) (values 0 1)]
+    [(east) (values 1 0)]
+    [(west) (values -1 0)]
+    [(southwest) (values -1 -1)]
+    [(northwest) (values -1 1)]
+    [(southeast) (values 1 -1)]
+    [(northeast) (values 1 1)]))
+
+(define (location-rel location direction)
+  (let ((x (car location))
+        (y (cdr location)))
+    (case direction
+      [(south) (cons x (- y 1))]
+      [(north) (cons x (+ y 1))]
+      [(east) (cons (+ x 1) y)]
+      [(west) (cons (- x 1) y)]
+      [(southwest) (cons (- x 1) (- y 1))]
+      [(northwest) (cons (- x 1) (+ y 1))]
+      [(southeast) (cons (+ x 1) (- y 1))]
+      [(northeast) (cons (+ x 1) (+ y 1))])))
+
+(define (is-our-team entity)
+  (equal? (entity-team-id entity) (state-team-id (entity-state entity))))
+
+(define (bot-can-move? bot direction)
+  (define nloc (location-rel (entity-location bot) direction))
+  (and (bot-can-act? bot)
+       (on-map? (state-map (entity-state entity)) nloc)
+       (not (occupied? (entity-state entity) nloc))))
+
+(define (bot-queue-action bot action)
+  (queue-action (entity-state bot) (hash-set action 'id (entity-id bot))))
+
+(define (bot-queue-move bot direction)
+  (if (or (not (bot-can-move? bot direction))
+          (not (is-our-team bot)))
+      (error "invalid move command")
+      (let-values (((dx dy) (direction->dxy direction)))
+        (bot-queue-action bot (hasheq 'action "move"
+                                      'dx dx
+                                      'dy dy)))))
+
+(define (player-mainloop state continue)
+  (define (main)
+    (for ((bot (filter is-our-team (state-entity-list state))))
+      (if (bot-can-move? bot 'south)
+          (bot-queue-move bot 'south)
+          #f))
+    (if (continue)
+        (main)
+        #f))
+  (main))
+
+(run-player "hivemind" player-mainloop)
