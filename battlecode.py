@@ -1103,6 +1103,7 @@ class State(object):
 
     def _kill_entities(self, entities):
         for dead in entities:
+            if dead not in self.entities: continue
             ent = self.entities[dead]
             if(ent.held_by == None):
                 if self.map._occupied[ent.location].id == ent.id:
@@ -1184,6 +1185,7 @@ class Game(object):
         else:
             # tcp socket
             conn = socket.socket()
+            conn.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, True)
         # connect to the server
         conn.connect(server)
 

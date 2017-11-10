@@ -2,25 +2,8 @@ import battlecode
 from battlecode import Direction
 import time
 import random
-
-#Start a game
 game = battlecode.Game('player')
-
 start = time.clock()
-
-#define helper functions here
-def nearest_glass_state(state, entity):
-    nearest_statue = None
-    nearest_dist = 10000
-    for other_entity in state.get_entities(entity_type=battlecode.Entity.STATUE):
-        if(entity == other_entity):
-            continue
-        dist = entity.location.adjacent_distance_to(other_entity.location)
-        if(dist< nearest_dist):
-            dist = nearest_dist
-            nearest_statue = other_entity
-
-    return nearest_statue
 
 def fast_adjacent_entities(state, location):
     for direction in Direction.directions():
@@ -28,50 +11,12 @@ def fast_adjacent_entities(state, location):
         if nloc in state.map._occupied:
             yield state.map._occupied[nloc]
 
-def nearest_opponents(state, entity):
-    nearest_thrower = None
-    nearest_dist = 10000
-    opponents = []
-    for other_entity in state.get_entities(entity_type=battlecode.Entity.THROWER):
-        if(entity == other_entity) or entity.team != other_entity.team:
-            continue
-        dist = entity.location.adjacent_distance_to(other_entity.location)
-        if(dist < nearest_dist):
-            dist = nearest_dist
-            opponents = []
-            opponents.append(other_entity)
-        elif(dist == nearest_dist):
-            opponents.append(other_entity)
-
-    return opponents
-
-def furthest_opponents(state, entity):
-    nearest_thrower = None
-    nearest_dist = 0
-    opponents = []
-    for other_entity in state.get_entities(entity_type=battlecode.Entity.THROWER):
-        if(entity == other_entity):
-            continue
-        dist = entity.location.adjacent_distance_to(other_entity.location)
-        if(dist > nearest_dist):
-            dist = nearest_dist
-            opponents = []
-            opponents.append(other_entity)
-        elif(dist == nearest_dist):
-            opponents.append(other_entity)
-
-    return opponents
-
-
-strategy_elements = []
-
-
 def is_in_diagonal(loc1, loc2):
     dx, dy = loc1.x - loc2.x, loc1.y - loc2.y
     return dx == 0 or dy == 0 or abs(dx) == abs(dy)
 
 
-for state in game.turns():
+def calculate_broad_goals(state):
     sectors_we_have = set()
     unit_collection_points = {}
     attack_targets = set()
@@ -114,26 +59,10 @@ for state in game.turns():
             if not build_queued:
                 unit_collection_points[sector.top_left + (state.map.sector_size // 2, state.map.sector_size // 2)] = 1
 
-    # assign units to locations
-    remaining = dict(unit_collection_points)
-    unit_directives = []
-    for unit in available_units:
-        smallest_dist = 1e3000
-        best_goal = None
-        for collection_point, needed in remaining.items():
-            assert needed > 0
-            ndist = unit.location.adjacent_distance_to(collection_point)
-            if ndist < smallest_dist:
-                smallest_dist = ndist
-                best_goal = collection_point
-        if best_goal is not None:
-            unit_directives.append((unit, best_goal))
-            remaining[best_goal] -= 1
-            if remaining[best_goal] == 0:
-                del remaining[best_goal]
+    return sectors_we_have, unit_collection_points, attack_targets, available_units, units_by_sector
 
-#    print(unit_directives)
 
+def plan_attacks(state, available_units, attack_targets):
     # attack loop
     for unit in available_units:
         if not unit.can_act: continue
@@ -197,23 +126,41 @@ for state in game.turns():
                             unit.queue_throw(direction)
                             break
 
+
+def assign_units_to_goals(state, unit_collection_points):
+    remaining = dict(unit_collection_points)
+    unit_directives = []
+    for unit in available_units:
+        if not unit.can_act:
+            continue
+        smallest_dist = 1e3000
+        best_goal = None
+        for collection_point, needed in remaining.items():
+            assert needed > 0
+            ndist = unit.location.adjacent_distance_to(collection_point)
+            if ndist < smallest_dist:
+                smallest_dist = ndist
+                best_goal = collection_point
+        if best_goal is not None:
+            unit_directives.append((unit, best_goal))
+            remaining[best_goal] -= 1
+            if remaining[best_goal] == 0:
+                del remaining[best_goal]
+    return unit_directives
+
+
+def move_units(state, available_units, unit_directives):
     # have units actually move
     for unit, goal in unit_directives:
         if unit.location == goal:
             continue
         direction = unit.location.direction_to(goal)
-#        print("trying to move towards directive")
-        if not unit.can_act:
-            pass
-#            print("can't act")
         if unit.can_move(direction):
             unit.queue_move(direction)
         elif unit.can_move(direction.rotate_counter_clockwise_degrees(45)):
             unit.queue_move(direction.rotate_counter_clockwise_degrees(45))
         elif unit.can_move(direction.rotate_counter_clockwise_degrees(315)):
             unit.queue_move(direction.rotate_counter_clockwise_degrees(315))
-#        else:
-#            print("but could not: %s -> %s (direction %s,%s)" % (unit.location, goal, direction.dx, direction.dy))
 
     # motion away from others if we haven't done anything else
     for unit in available_units:
@@ -223,6 +170,21 @@ for state in game.turns():
                 if found and found.team == state.my_team:
                     if unit.can_move(direction):
                         unit.queue_move(direction)
+
+loop_start = time.time()
+
+for state in game.turns():
+    last_start = loop_start
+    loop_start = time.time()
+    sectors_we_have, unit_collection_points, attack_targets, available_units, units_by_sector = calculate_broad_goals(state)
+
+    plan_attacks(state, available_units, attack_targets)
+
+    unit_directives = assign_units_to_goals(state, unit_collection_points)
+
+    move_units(state, available_units, unit_directives)
+    loop_end = time.time()
+#    print((loop_end - loop_start) * 1000, "\t", (loop_start - last_start) * 1000, "\t", state.turn)
 
 end = time.clock()
 print('clock time: '+str(end - start))
