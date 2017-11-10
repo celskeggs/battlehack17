@@ -3,8 +3,7 @@ import time
 import random
 
 #Start a game
-game = battlecode.Game('player')
-
+game = battlecode.Game('player2')
 start = time.clock()
 
 #define helper functions here
@@ -61,7 +60,7 @@ for state in game.turns():
     # Your Code will run within this loop
     for entity in state.get_entities(team=state.my_team): 
         # This line gets all the bots on your team
-        if(state.turn % 50 == 0):
+        if(state.turn % 100 == 0):
             for direction in battlecode.Direction.directions():
                 if entity.can_build(direction):
                     entity.queue_build(direction)
@@ -70,64 +69,48 @@ for state in game.turns():
         near_entities = entity.entities_within_adjacent_distance(1)
         near_entities = list(filter(lambda x: x.can_be_picked, near_entities))
 
-        picked = False
-        for pickup_entity in entity.entities_within_adjacent_distance(1):
-            if entity.can_pickup(pickup_entity):
-                entity.queue_pickup(pickup_entity)
-                picked = True
-            if(picked):
-                break
-
-        thrown = False
-        if(entity.holding is not None):
-            far_ops = furthest_opponents(state, entity)
-            for op in far_ops:
-                if(entity.location != op.location):
-                    direction = entity.location.direction_to(op.location)
-                    if(entity.can_throw(direction)):
-                        entity.queue_throw(direction)
-                        thrown = True
-                        
-                    elif(entity.can_throw(direction.rotate_right())):
-                        entity.queue_throw(direction.rotate_right())
-                        thrown = True
-                        
-                    elif(entity.can_throw(direction.rotate_left())):
-                        entity.queue_throw(direction.rotate_left())
-                        thrown = True
-                if(thrown):
-                    break 
-
-        moved = False
-        far_ops = furthest_opponents(state, entity)
-        #print(far_ops)
-        for op in far_ops:
-            if(entity.location != op.location):
-                direction = entity.location.direction_to(op.location)
-                if(entity.can_move(direction)):
-                    entity.queue_move(direction)
-                    
-                    #print(entity.location.direction_to(op.location))
-                    moved = True
-                    
-                elif(entity.can_move(direction.rotate_right())):
-                    entity.queue_move(direction.rotate_right())
-                    #print(entity.location.direction_to(op.location))
-                    moved = True
-                    
-                elif(entity.can_move(direction.rotate_left())):
-                    entity.queue_move(direction.rotate_left())
-
-                    #print(entity.location.direction_to(op.location))
-                    moved = True
-                    
-            if(moved):
-                break
+        
+        # moved = False
+        # far_ops = furthest_opponents(state, entity)
+        # #print(far_ops)
+        # for op in far_ops:
+        #     if(entity.location != op.location):
+        #         direction = entity.location.direction_to(op.location)
+        #         if(entity.can_move(direction)):
+        #             entity.queue_move(direction)
+        #             #print(entity.location.direction_to(op.location))
+        #             moved = True
+        #             break
+        #         elif(entity.can_move(direction.rotate_right())):
+        #             entity.queue_move(direction.rotate_right())
+        #             #print(entity.location.direction_to(op.location))
+        #             moved = True
+        #             break
+        #         elif(entity.can_move(direction.rotate_left())):
+        #             entity.queue_move(direction.rotate_left())
+        #             #print(entity.location.direction_to(op.location))
+        #             moved = True
+        #             break
         
 
-        
+        # for pickup_entity in entity.entities_within_adjacent_distance(1):
+        #     if entity.can_pickup(pickup_entity):
+        #         entity.queue_pickup(pickup_entity)
                 
-         
+        # if(entity.holding is not None):
+        #     far_ops = furthest_opponents(state, entity)
+        #     for op in far_ops:
+        #         if(entity.location != op.location):
+        #             direction = entity.location.direction_to(op.location)
+        #             if(entity.can_throw(direction)):
+        #                 entity.queue_throw(direction)
+        #                 break
+        #             elif(entity.can_throw(direction.rotate_right())):
+        #                 entity.queue_throw(direction.rotate_right())
+        #                 break
+        #             elif(entity.can_throw(direction.rotate_left())):
+        #                 entity.queue_throw(direction.rotate_left())
+        #                 break
             
         
 
