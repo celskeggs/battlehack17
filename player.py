@@ -103,9 +103,10 @@ for state in game.turns():
                 if not unit.can_act: continue
                 for direction in Direction.directions():
                     if unit.can_build(direction): # TODO: make sure they build in THIS sector
-                        unit.queue_build(direction)
-                        build_queued = True
-                        break
+                        if (state.map.sector_at(unit.location.adjacent_location_in_direction(direction)) == sector):
+                            unit.queue_build(direction)
+                            build_queued = True
+                            break
                     else:
                         print("can't build")
                 if build_queued:
