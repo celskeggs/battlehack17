@@ -24,17 +24,17 @@ def nearest_glass_state(state, entity):
 def nearest_opponents(state, entity):
     nearest_thrower = None
     nearest_dist = 10000
-    opponents = {}
+    opponents = []
     for other_entity in state.get_entities(entity_type=battlecode.Entity.THROWER):
         if(entity == other_entity):
             continue
         dist = entity.location.adjacent_distance_to(other_entity.location)
         if(dist < nearest_dist):
             dist = nearest_dist
-            opponents = {}
-            opponents[other_entity] = nearest_dist
-        elif(dist = nearest_dist):
-            opponents[other_entity] = nearest_dist
+            opponents = []
+            opponents.append(other_entity)
+        elif(dist == nearest_dist):
+            opponents.append[other_entity]
 
     return opponents
 
@@ -52,7 +52,7 @@ for state in game.turns():
         near_entities = entity.entities_within_euclidean_distance(1.9)
         near_entities = list(filter(lambda x: x.can_be_picked, near_entities))
 
-        if(len(entity.entities_within_adjacent_distance(1)) > 1):
+        if(len(list(entity.entities_within_adjacent_distance(1))) > 1):
             bad = []
             for opponent in nearest_opponents(state, entity):
                 bad.append(entity.location.direction_to(opponent.location))
@@ -77,11 +77,7 @@ for state in game.turns():
             direction = entity.location.direction_to(statue.location)
             if entity.can_throw(direction):
                 entity.queue_throw(direction)
-
         
-
-
-
 
 
 end = time.clock()
