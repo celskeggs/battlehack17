@@ -70,50 +70,48 @@ for state in game.turns():
         near_entities = entity.entities_within_euclidean_distance(1.9)
         near_entities = list(filter(lambda x: x.can_be_picked, near_entities))
 
-        moved = False
-        far_ops = furthest_opponents(state, entity)
-        for op in far_ops:
-            if(entity.can_move(entity.location.direction_to(op))):
-                entity.queue_move(entity.location.direction_to(op))
-                moved = True
-                break
-            elif(entity.can_move(entity.location.direction_to(op).rotate_right())):
-                entity.queue_move(entity.location.direction_to(op).rotate_right())
-                moved = True
-                break
-            elif(entity.can_move(entity.location.direction_to(op).rotate_left())):
-                entity.queue_move(entity.location.direction_to(op).rotate_left())
-                moved = True
-                break
+        if(len(list(entity.entities_within_adjacent_distance(1))) > 1):
+            moved = False
+            far_ops = furthest_opponents(state, entity)
+            for op in far_ops:
+                if(entity.can_move(entity.location.direction_to(op))):
+                    entity.queue_move(entity.location.direction_to(op))
+                    moved = True
+                    break
+                elif(entity.can_move(entity.location.direction_to(op).rotate_right())):
+                    entity.queue_move(entity.location.direction_to(op).rotate_right())
+                    moved = True
+                    break
+                elif(entity.can_move(entity.location.direction_to(op).rotate_left())):
+                    entity.queue_move(entity.location.direction_to(op).rotate_left())
+                    moved = True
+                    break
+            if(not moved):
+                for pickup_entity in near_entities:
+                    assert entity.location.is_adjacent(pickup_entity.location)
+                    if entity.can_pickup(pickup_entity):
+                        entity.queue_pickup(pickup_entity)
 
-        
-       # if(not moved):
-         #   for direction in battlecode.Direction.directions():
-           #     if entity.can_build(direction):
-                #    entity.queue_build(direction)
-        if(not moved):
+        else: 
             for pickup_entity in near_entities:
                 assert entity.location.is_adjacent(pickup_entity.location)
                 if entity.can_pickup(pickup_entity):
                     entity.queue_pickup(pickup_entity)
-
-        statue = nearest_glass_state(state, entity)
-        if(statue != None):
-            far_ops = furthest_opponents(state, entity)
-            for op in far_ops:
-                if(entity.can_throw(entity.location.direction_to(op))):
-                    entity.queue_throw(entity.location.direction_to(op))
-                    moved = True
-                    break
-                elif(entity.can_throw(entity.location.direction_to(op).rotate_right())):
-                    entity.queue_throw(entity.location.direction_to(op).rotate_right())
-                    moved = True
-                    break
-                elif(entity.can_throw(entity.location.direction_to(op).rotate_left())):
-                    entity.queue_throw(entity.location.direction_to(op).rotate_left())
-                    moved = True
-                    break
-        
+                    far_ops = furthest_opponents(state, entity)
+                    for op in far_ops:
+                        if(entity.can_throw(entity.location.direction_to(op))):
+                            entity.queue_throw(entity.location.direction_to(op))
+                            moved = True
+                            break
+                        elif(entity.can_throw(entity.location.direction_to(op).rotate_right())):
+                            entity.queue_throw(entity.location.direction_to(op).rotate_right())
+                            moved = True
+                            break
+                        elif(entity.can_throw(entity.location.direction_to(op).rotate_left())):
+                            entity.queue_throw(entity.location.direction_to(op).rotate_left())
+                            moved = True
+                            break
+            
         
 
 
