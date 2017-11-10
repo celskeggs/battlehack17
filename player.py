@@ -64,78 +64,151 @@ def furthest_opponents(state, entity):
 
 
 strategy_elements = []
-CANCEL = object()
 
 
-@strategy_elements.append
-def build_new_statues(state, entity):
-    global sectors_we_have
-    if state.turn % 10 <= 1:
-        for direction in Direction.directions():
-            nloc = entity.location.adjacent_location_in_direction(direction)
-            if state.map.location_on_map(nloc) and state.map.sector_at(nloc).top_left in sectors_we_have:
-                continue
-            if entity.can_build(direction):
-                entity.queue_build(direction)
-
-
-@strategy_elements.append
-def pick_up_adjacent_entities(state, entity):
-    adjacent = list(fast_adjacent_entities(state, entity.location)) # entity.entities_within_adjacent_distance(1))
-    if len(adjacent) >= 6:
-        return CANCEL
-    for pickup_entity in adjacent:
-        if entity.can_pickup(pickup_entity):
-            entity.queue_pickup(pickup_entity)
-            break
-
-
-@strategy_elements.append
-def try_throwing_entities(state, entity):
-    if entity.holding is not None:
-        far_ops = furthest_opponents(state, entity)
-        for op in far_ops:
-            if entity.location != op.location:
-                direction = entity.location.direction_to(op.location)
-                if entity.can_throw(direction):
-                    entity.queue_throw(direction)
-                    break
-                if entity.can_throw(direction.rotate_right()):
-                    entity.queue_throw(direction.rotate_right())
-                    break
-                if entity.can_throw(direction.rotate_left()):
-                    entity.queue_throw(direction.rotate_left())
-                    break
-
-
-@strategy_elements.append
-def try_move_away(state, entity):
-    far_ops = furthest_opponents(state, entity)
-    for op in far_ops:
-        if entity.location != op.location:
-            direction = entity.location.direction_to(op.location)
-            if entity.can_move(direction):
-                entity.queue_move(direction)
-                break
-            if entity.can_move(direction.rotate_right()):
-                entity.queue_move(direction.rotate_right())
-                break
-            if entity.can_move(direction.rotate_left()):
-                entity.queue_move(direction.rotate_left())
-                break
+def is_in_diagonal(loc1, loc2):
+    dx, dy = loc1.x - loc2.x, loc1.y - loc2.y
+    return dx == 0 or dy == 0 or abs(dx) == abs(dy)
 
 
 for state in game.turns():
     sectors_we_have = set()
-    for entity in state.get_entities(team=state.my_team, entity_type=battlecode.Entity.STATUE):
-        sectors_we_have.add(state.map.sector_at(entity.location).top_left)
-#    print("sectors we have: %d" % len(sectors_we_have))
-        
-    # Your Code will run within this loop
-    for entity in state.get_entities(team=state.my_team, entity_type=battlecode.Entity.THROWER):
-        for strategy_func in strategy_elements:
-            if strategy_func(state, entity) is CANCEL:
-                break
+    unit_collection_points = {}
+    attack_targets = set()
+    available_units = []
+    units_by_sector = {sector.top_left: [] for sector in state.map._sectors.values()}
+    for entity in state.entities.values():
+        if entity.type == battlecode.Entity.STATUE:
+            if entity.team == state.my_team:
+                # goal: protect this statue, by bringing a unit nearby
+                # TODO unit_collection_points[entity.location] = 1
+                sectors_we_have.add(state.map.sector_at(entity.location).top_left)
+            else:
+                # goal: destroy this statue, by bringing units nearby and attacking the statue
+                unit_collection_points[entity.location] = 5
+                attack_targets.add(entity.location)
+        elif entity.type == battlecode.Entity.THROWER:
+            if entity.team == state.my_team:
+                if entity.held_by is None:
+                    available_units.append(entity)
+                    units_by_sector[state.map.sector_at(entity.location).top_left].append(entity)
+            else:
+                # goal: destroy this unit
+                attack_targets.add(entity.location)
+
+    for sector in state.map._sectors.values():
+        if sector.top_left not in sectors_we_have:
+            build_queued = False
+            for unit in units_by_sector[sector.top_left]:
+                if not unit.can_act: continue
+                for direction in Direction.directions():
+                    if unit.can_build(direction): # TODO: make sure they build in THIS sector
+                        unit.queue_build(direction)
+                        build_queued = True
+                        break
+                    else:
+                        print("can't build")
+                if build_queued:
+                    break
+            if not build_queued:
+                unit_collection_points[sector.top_left + (state.map.sector_size // 2, state.map.sector_size // 2)] = 1
+
+    # assign units to locations
+    remaining = dict(unit_collection_points)
+    unit_directives = []
+    for unit in available_units:
+        smallest_dist = 1e3000
+        best_goal = None
+        for collection_point, needed in remaining.items():
+            assert needed > 0
+            ndist = unit.location.adjacent_distance_to(collection_point)
+            if ndist < smallest_dist:
+                smallest_dist = ndist
+                best_goal = collection_point
+        if best_goal is not None:
+            unit_directives.append((unit, best_goal))
+            remaining[best_goal] -= 1
+            if remaining[best_goal] == 0:
+                del remaining[best_goal]
+
+    print(unit_directives)
+
+    # have units actually move
+    for unit, goal in unit_directives:
+        if unit.location == goal:
+            continue
+        direction = unit.location.direction_to(goal)
+#        print("trying to move towards directive")
+        if not unit.can_act:
+            pass
+#            print("can't act")
+        if unit.can_move(direction):
+            unit.queue_move(direction)
+        elif unit.can_move(direction.rotate_counter_clockwise_degrees(45)):
+            unit.queue_move(direction.rotate_counter_clockwise_degrees(45))
+        elif unit.can_move(direction.rotate_counter_clockwise_degrees(315)):
+            unit.queue_move(direction.rotate_counter_clockwise_degrees(315))
+#        else:
+#            print("but could not: %s -> %s (direction %s,%s)" % (unit.location, goal, direction.dx, direction.dy))
+
+    # attack loop
+    for unit in available_units:
+        if not unit.can_act: continue
+        if unit.holding is None:
+            do_we_have_something_to_attack = False
+            to_pick_up = None
+            for target in attack_targets:
+                dist = unit.location.adjacent_distance_to(target)
+                if dist <= 7:
+                    if target in state.map._occupied and unit.can_pickup(state.map._occupied[target]):
+                        to_pick_up = target
+                    else:
+                        do_we_have_something_to_attack = True
+            if to_pick_up is not None:
+                unit.queue_pickup(state.map._occupied[to_pick_up])
+            elif do_we_have_something_to_attack:
+                pass  # TODO
+        else:
+            smallest = 8
+            best_target = None
+            smallest_linear = 8
+            best_linear = None
+            for target in attack_targets:
+                dist = unit.location.adjacent_distance_to(target)
+                if dist == 0:
+                    continue
+                if dist < smallest:
+                    smallest = dist
+                    best_target = target
+                if dist < smallest_linear and is_in_diagonal(unit.location, target):
+                    smallest_linear = dist
+                    best_linear = target
+            if best_linear is not None:
+                direction = unit.location.direction_to(best_linear)
+                if unit.can_throw(direction):
+                    unit.queue_throw(direction)
+            elif best_target is not None:
+                direction = unit.location.direction_to(best_target)
+                if unit.can_move(direction.rotate_left()):
+                    unit.queue_move(direction.rotate_left())
+                elif unit.can_move(direction.rotate_right()):
+                    unit.queue_move(direction.rotate_right())
+            else:
+                for direction in Direction.directions():
+                    land_at = unit.location + (direction.dx * 7, direction.dy * 7)
+                    if (state.map.tile_at(land_at) == "G") == (unit.holding.team == state.my_team):
+                        if unit.can_throw(direction):
+                            unit.queue_throw(direction)
+                            break
+
+    # motion away from others
+    for unit in available_units:
+        if unit.can_act:
+            for direction in Direction.directions():
+                found = state.map._occupied.get(unit.location.adjacent_location_in_direction(direction.rotate_opposite()),None)
+                if found and found.team == state.my_team:
+                    if unit.can_move(direction):
+                        unit.queue_move(direction)
 
 end = time.clock()
 print('clock time: '+str(end - start))

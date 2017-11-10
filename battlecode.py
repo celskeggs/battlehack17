@@ -784,6 +784,22 @@ class Location(tuple):
 
     __hash__ = tuple.__hash__
 
+    def __add__(self, other):
+        if isinstance(other, Location):
+            return Location(self.x + other.x, self.y + other.y)
+        elif isinstance(other, tuple):
+            return Location(self.x + other[0], self.y + other[1])
+        else:
+            return NotImplemented
+
+    def __sub__(self, other):
+        if isinstance(other, Location):
+            return Location(self.x - other.x, self.y - other.y)
+        elif isinstance(other, tuple):
+            return Location(self.x - other[0], self.y - other[1])
+        else:
+            return NotImplemented
+
     def distance_to_squared(self, location):
         '''
         Return squared distance from self to other location.
