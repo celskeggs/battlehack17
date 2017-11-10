@@ -38,6 +38,23 @@ def nearest_opponents(state, entity):
 
     return opponents
 
+def furthest_opponents(state, entity):
+    furthest_thrower = None
+    furthest_dist = 0
+    opponents = []
+    for other_entity in state.get_entities(entity_type=battlecode.Entity.THROWER):
+        if(entity == other_entity):
+            continue
+        dist = entity.location.adjacent_distance_to(other_entity.location)
+        if(dist > furthest_dist):
+            dist = furthest_dist
+            opponents = []
+            opponents.append(other_entity)
+        elif(dist == furthest_dist):
+            opponents.append[other_entity]
+
+    return opponents
+
 
 for state in game.turns():
     # Your Code will run within this loop
@@ -52,23 +69,28 @@ for state in game.turns():
         near_entities = entity.entities_within_euclidean_distance(1.9)
         near_entities = list(filter(lambda x: x.can_be_picked, near_entities))
 
+        moved = False
+        far_ops = furthest_opponents(state, entity)
+        for op in far_ops:
+            if(entity.can_move(entity.location.direction_to(op))):
+                entity.queue_move(entity.location.direction_to(op))
+                moved = True
+                break
+            elif(entity.can_move(entity.location.direction_to(op).rotate_right())):
+                entity.queue_move(entity.location.direction_to(op).rotate_right())
+                moved = True
+                break
+            elif(entity.can_move(entity.location.direction_to(op).rotate_left())):
+                entity.queue_move(entity.location.direction_to(op).rotate_left())
+                moved = True
+                break
 
-        if(len(list(entity.entities_within_adjacent_distance(1))) > 1):
-            moved = False
-            bad = []
-            for opponent in nearest_opponents(state, entity):
-                bad.append(entity.location.direction_to(opponent.location))
-                bad.append(entity.location.direction_to(opponent.location).rotate_counter_clockwise_degrees(45))
-                bad.append(entity.location.direction_to(opponent.location).rotate_counter_clockwise_degrees(-45))
-            for direction in battlecode.Direction.directions():
-                if (entity.can_move(direction) and (direction not in bad)):
-                    entity.queue_move(direction)
-                    moved = True
-            if(not moved):
-                for direction in battlecode.Direction.directions():
-                    if entity.can_build(direction):
-                        entity.queue_build(direction)
-        else:
+        
+       # if(not moved):
+         #   for direction in battlecode.Direction.directions():
+           #     if entity.can_build(direction):
+                #    entity.queue_build(direction)
+        if(not moved):
             for pickup_entity in near_entities:
                 assert entity.location.is_adjacent(pickup_entity.location)
                 if entity.can_pickup(pickup_entity):
