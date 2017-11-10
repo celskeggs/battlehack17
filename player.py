@@ -52,16 +52,18 @@ for state in game.turns():
         near_entities = entity.entities_within_euclidean_distance(1.9)
         near_entities = list(filter(lambda x: x.can_be_picked, near_entities))
 
+
         if(len(list(entity.entities_within_adjacent_distance(1))) > 1):
+            moved = False
             bad = []
             for opponent in nearest_opponents(state, entity):
                 bad.append(entity.location.direction_to(opponent.location))
                 bad.append(entity.location.direction_to(opponent.location).rotate_counter_clockwise_degrees(45))
                 bad.append(entity.location.direction_to(opponent.location).rotate_counter_clockwise_degrees(-45))
             for direction in battlecode.Direction.directions():
-                if entity.can_move(direction and direction not in bad):
+                if (entity.can_move(direction) and (direction not in bad)):
                     entity.queue_move(direction)
-                    moved = true
+                    moved = True
             if(not moved):
                 for direction in battlecode.Direction.directions():
                     if entity.can_build(direction):
