@@ -39,21 +39,22 @@ def nearest_opponents(state, entity):
     return opponents
 
 def furthest_opponents(state, entity):
-    furthest_thrower = None
-    furthest_dist = 0
+    nearest_thrower = None
+    nearest_dist = 10000
     opponents = []
     for other_entity in state.get_entities(entity_type=battlecode.Entity.THROWER):
         if(entity == other_entity):
             continue
         dist = entity.location.adjacent_distance_to(other_entity.location)
-        if(dist > furthest_dist):
-            dist = furthest_dist
+        if(dist > nearest_dist):
+            dist = nearest_dist
             opponents = []
             opponents.append(other_entity)
-        elif(dist == furthest_dist):
+        elif(dist == nearest_dist):
             opponents.append[other_entity]
 
     return opponents
+
 
 
 for state in game.turns():
@@ -98,9 +99,21 @@ for state in game.turns():
 
         statue = nearest_glass_state(state, entity)
         if(statue != None):
-            direction = entity.location.direction_to(statue.location)
-            if entity.can_throw(direction):
-                entity.queue_throw(direction)
+            far_ops = furthest_opponents(state, entity)
+            for op in far_ops:
+                if(entity.can_throw(entity.location.direction_to(op))):
+                    entity.queue_throw(entity.location.direction_to(op))
+                    moved = True
+                    break
+                elif(entity.can_throw(entity.location.direction_to(op).rotate_right())):
+                    entity.queue_throw(entity.location.direction_to(op).rotate_right())
+                    moved = True
+                    break
+                elif(entity.can_throw(entity.location.direction_to(op).rotate_left())):
+                    entity.queue_throw(entity.location.direction_to(op).rotate_left())
+                    moved = True
+                    break
+        
         
 
 
