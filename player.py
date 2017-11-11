@@ -26,6 +26,45 @@ def is_in_diagonal(loc1, loc2):
     return dx == 0 or dy == 0 or abs(dx) == abs(dy)
 
 
+MOTION_KEY = {" ": (0, 0), "1": (-1, 1), "^": (0, 1), "<": (-1, 0), "v": (0, 1), ">": (1, 0), "9": (1, -1)}
+MOTION_MAP = [" <<999v ",
+              " <<99v <",
+              " <99v <1",   # 1^
+              " <9v <11",   # < >
+              " <v <111",   #  v9
+              " < <11vv",
+              "  vvvvvv",
+              "        "][::-1]
+DIST_MAP =   ["01222110",
+              "01221101",
+              "01211011",
+              "01110112",
+              "01101122",
+              "01011222",
+              "00111111",
+              "00000000"][::-1]
+strafing_lookup = {}
+for dx in range(0, 8):
+    for dy in range(0, 8):
+        ldx, ldy = MOTION_KEY[MOTION_MAP[dy][dx]]
+        strafing_lookup[(dx,dy)] = (ldx, ldy, int(DIST_MAP[dy][dx]))
+        strafing_lookup[(-dx,dy)] = (-ldx, ldy, int(DIST_MAP[dy][dx]))
+        strafing_lookup[(dx,-dy)] = (ldx, -ldy, int(DIST_MAP[dy][dx]))
+        strafing_lookup[(-dx,-dy)] = (-ldx, -ldy, int(DIST_MAP[dy][dx]))
+
+
+def calc_strafe_dist(loc1, loc2):
+    assert -7 <= loc1.x - loc2.x <= 7 and -7 <= loc1.y - loc2.y <= 7
+    ldx, ldy, dist = strafing_lookup[loc1.x - loc2.x, loc1.y - loc2.y]
+    return dist
+
+
+def calc_strafe(loc1, loc2):
+    assert -7 <= loc1.x - loc2.x <= 7 and -7 <= loc1.y - loc2.y <= 7
+    ldx, ldy, dist = strafing_lookup[loc1.x - loc2.x, loc1.y - loc2.y]
+    return Direction(ldx, ldy)
+
+
 def calculate_broad_goals(state):
     sectors_we_have = set()
     unit_collection_points = {}
@@ -51,26 +90,23 @@ def calculate_broad_goals(state):
                 # goal: destroy this unit
                 attack_targets.add(entity.location)
 
+    # have units build anything they can before we make plans
+    for unit in available_units:
+        for direction in directions_rand():
+            adj = unit.location.adjacent_location_in_direction(direction)
+            if state.map.location_on_map(adj) and state.map.sector_at(adj).top_left not in sectors_we_have:
+                if unit.can_build(direction):
+                    unit.queue_build(direction)
+                    sectors_we_have.add(state.map.sector_at(adj).top_left)
+                    break
+
+    # now send units towards new places
     for sector in state.map._sectors.values():
         if sector.top_left not in sectors_we_have:
-            build_queued = False
-            for unit in units_by_sector[sector.top_left]:
-                if not unit.can_act: continue
-                for direction in directions_rand():
-                    if unit.can_build(direction): # TODO: make sure they build in THIS sector
-                        if (state.map.sector_at(unit.location.adjacent_location_in_direction(direction)) == sector):
-                            unit.queue_build(direction)
-                            build_queued = True
-                            break
-#                    else:
-#                        print("can't build")
-                if build_queued:
-                    break
-            if not build_queued:
-                unit_collection_points[sector.top_left + (state.map.sector_size // 2, state.map.sector_size // 2)] = 1
+            unit_collection_points[sector.top_left + (state.map.sector_size // 2, state.map.sector_size // 2)] = 1
 
     total_requests = sum(unit_collection_points.values())
-    if len(available_units) >= total_requests + 2:
+    if total_requests and len(available_units) >= total_requests + 2:
         extra_units_to_distribute = (len(available_units) - total_requests) // 2
         uniform_extra_fraction = extra_units_to_distribute // total_requests
         # allocate large blocks (update later)
@@ -94,6 +130,7 @@ def calculate_broad_goals(state):
 def plan_attacks(state, available_units, attack_targets):
     # attack loop
     for unit in available_units:
+        if not unit.can_act: continue
         if unit.holding is None:
             do_we_have_something_to_attack = False
             to_pick_up = None
@@ -111,48 +148,68 @@ def plan_attacks(state, available_units, attack_targets):
                     if unit.can_pickup(adjacent):
                         unit.queue_pickup(adjacent)
         else:
-            smallest = 8
-            best_target = None
-            smallest_linear = 8
-            best_linear = None
-            should_back_up_from = None
-            for target in attack_targets:
-                dist = unit.location.adjacent_distance_to(target)
-                if dist == 0:
+            assert unit.is_holding and unit.can_act
+            hittable_glass = None
+            hittable_thrower = None
+            hittable_surface = None
+            move_away_from = None
+            for direction in directions_rand():
+                blocker = unit.location.adjacent_location_in_direction(direction)
+                if not state.map.location_on_map(blocker):
                     continue
-                if 2 <= dist < smallest:
-                    smallest = dist
-                    best_target = target
-                if 2 <= dist < smallest_linear and is_in_diagonal(unit.location, target):
-                    smallest_linear = dist
-                    best_linear = target
-                if dist == 1:
-                    should_back_up_from = target
-            if best_linear is not None:
-                direction = unit.location.direction_to(best_linear)
-                if unit.can_throw(direction):
-                    unit.queue_throw(direction)
-            elif should_back_up_from is not None:
-                direction = unit.location.direction_to(should_back_up_from).rotate_opposite()
-                if unit.can_move(direction):
-                    unit.queue_move(direction)
-                elif unit.can_move(direction.rotate_left()):
-                    unit.queue_move(direction.rotate_left())
-                elif unit.can_move(direction.rotate_right()):
-                    unit.queue_move(direction.rotate_right())
-            elif best_target is not None:
-                direction = unit.location.direction_to(best_target)
-                if unit.can_move(direction.rotate_left()):
-                    unit.queue_move(direction.rotate_left())
-                elif unit.can_move(direction.rotate_right()):
-                    unit.queue_move(direction.rotate_right())
-            else:
-                for direction in directions_rand():
-                    land_at = unit.location + (direction.dx * 7, direction.dy * 7)
-                    if state.map.location_on_map(land_at) and (state.map.tile_at(land_at) == "G") == (unit.holding.team == state.my_team):
-                        if unit.can_throw(direction):
-                            unit.queue_throw(direction)
+                if blocker in state.map._occupied:
+                    # can't throw in this direction
+                    blocker_obj = state.map._occupied[blocker]
+                    if blocker_obj.type != battlecode.Entity.HEDGE and blocker_obj.team != state.my_team and unit.can_move(direction.rotate_opposite()):
+                        move_away_from = direction
+                    continue
+                hit_anything = False
+                for dist in range(2, 8):
+                    cell = unit.location + (dist * direction.dx, dist * direction.dy)
+                    if cell not in state.map._occupied:
+                        continue
+                    hit_anything = True
+                    collision_with = state.map._occupied[cell]
+                    if collision_with.team == state.my_team: # don't throw this way!
+                        continue
+                    if collision_with.type == battlecode.Entity.THROWER:
+                        hittable_thrower = direction
+                        break
+                    elif collision_with.type == battlecode.Entity.STATUE:
+                        hittable_glass = direction
+                        break
+                    else:
+                        assert collision_with.type == battlecode.Entity.HEDGE
+                        if unit.holding.team != state.my_team:  # i.e. hedges are a fine target iff we're carrying an enemy
+                            hittable_surface = direction
                             break
+                if not hit_anything and state.map.location_on_map(cell) and (state.map.tile_at(cell) == "G") == (unit.holding.team == state.my_team):
+                    hittable_surface = direction
+            hittable_final = hittable_glass or hittable_thrower  # TODO: be willing to hold on to team members for a short time
+            if hittable_final:
+                assert unit.is_holding and unit.can_act
+                assert unit.can_throw(hittable_final)
+                unit.queue_throw(hittable_final)
+            elif move_away_from is not None:
+                unit.can_move(move_away_from.rotate_opposite())
+            else:
+                strafe_dist = 1e3000
+                best_target = None
+                for target in attack_targets:
+                    if 2 <= unit.location.adjacent_distance_to(target) <= 7:
+                        lstrafe = calc_strafe_dist(unit.location, target)
+                        if lstrafe < strafe_dist:
+                            strafe_dist, best_target = lstrafe, target
+                            if lstrafe == 1:
+                                break
+                if best_target is not None:
+                    direction = calc_strafe(unit.location, best_target)
+                    if unit.can_move(direction):
+                        unit.queue_move(direction)
+                    # TODO: what if we can't do that
+                elif hittable_surface is not None:
+                    assert unit.can_throw(hittable_surface)
+                    unit.queue_throw(hittable_surface)
 
 
 def assign_units_to_goals(state, unit_collection_points):
