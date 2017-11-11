@@ -63,8 +63,6 @@ def gen_zoning(board):
 #Takes a state, a starting location, and an ending location, and finds the fastest path
 #around obstacles to get between the two. Returns an empty list if the location is inaccessible
 def a_star(state, start, end, board):
-    assert state.map.location_on_map(start)
-    assert state.map.location_on_map(end)
     directions = [Direction(1, 0), Direction(-1, 0), Direction(1, 0), Direction(-1, 0),
                      Direction(-1, 1), Direction(1, 1), Direction(-1, -1), Direction(1, -1)]
     if end in state.map._occupied:
@@ -85,6 +83,7 @@ def a_star(state, start, end, board):
     came_from[start_point] = None
     direction_from[start_point]  = None
     cost_so_far[start_point] = 0
+    traversed = set()
     found = False
 
     while not frontier.empty():
@@ -93,6 +92,9 @@ def a_star(state, start, end, board):
         if pos == end:
             found = True
             break
+        if pos in traversed:
+            continue
+        traversed.add(pos)
         cur_x = pos[0]
         cur_y = pos[1]
         north = (cur_x, cur_y + 1)
