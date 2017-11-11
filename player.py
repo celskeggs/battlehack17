@@ -1,5 +1,7 @@
 import battlecode
 from battlecode import Direction
+from battlecode import Location
+from queue import PriorityQueue
 import time
 import random
 game = battlecode.Game('player')
@@ -9,6 +11,73 @@ DIRS = [Direction.SOUTH_WEST, Direction.SOUTH,
                 Direction.SOUTH_EAST, Direction.EAST,
                 Direction.NORTH_EAST, Direction.NORTH,
                 Direction.NORTH_WEST, Direction.WEST]
+
+#Takes a state, a starting location, and an ending location, and finds the fastest path
+#around obstacles to get between the two. Returns an empty list if the location is inaccessible
+def a_star(state, start, end):
+    assert state.map.location_on_map(start)
+    assert state.map.location_on_map(end)
+    directions = [Direction(1, 0), Direction(-1, 0), Direction(1, 0), Direction(-1, 0),
+                     Direction(-1, 1), Direction(1, 1), Direction(-1, -1), Direction(1, -1)]
+    if end in state.map._occupied:
+        for direction in directions:
+            if end.adjacent_location_in_direction(direction) not in state.map._occupied:
+                end = end.adjacent_location_in_direction(direction)
+                break
+
+    if(start == end):
+        return []
+
+    came_from = {}
+    cost_so_far = {}
+    direction_from = {}
+    frontier = PriorityQueue()
+    frontier.put(start, 0)
+    came_from[start] = None
+    direction_from[start]  = None
+    cost_so_far[start] = 0
+    found = False
+
+    while not frontier.empty():
+
+        pos = frontier.get()
+        if pos == end:
+            found = True
+            break
+        cur_x = pos.x
+        cur_y = pos.y
+        north = Location(cur_x, cur_y + 1)
+        south = Location(cur_x, cur_y - 1)
+        east = Location(cur_x + 1, cur_y)
+        west = Location(cur_x - 1, cur_y)
+        north_west = Location(cur_x - 1, cur_y + 1)
+        north_east = Location(cur_x + 1, cur_y + 1)
+        south_west = Location(cur_x - 1, cur_y + 1)
+        south_east = Location(cur_x + 1, cur_y - 1)
+        locations = [(north, Direction(1, 0)), (south, Direction(-1, 0)), (east, Direction(1, 0)), (west, Direction(-1, 0)),
+                     (north_west, Direction(-1, 1)), (north_east, Direction(1, 1)), (south_west, Direction(-1, -1)), (south_east, Direction(1, -1))]
+
+        for place, direction in locations:
+            if place in state.map._occupied and not state.map._occupied[place].is_thrower:
+               continue
+            if state.map.location_on_map(place):
+                new_cost = cost_so_far[pos] + 1 
+                if place not in cost_so_far or new_cost < cost_so_far[place]:
+                    cost_so_far[place] = new_cost
+                    priority = new_cost + max(abs(place.x - end.x), abs(place.y - end.y))
+                    frontier.put(place, priority)
+                    came_from[place] = pos
+                    direction_from[place] = direction
+    if(found):
+        trace = end
+        path = [end]
+        while trace != start:
+            path.insert(0, direction_from[trace])
+            trace = came_from[trace]
+        return path
+    else:
+        return []
+
 
 def directions_rand():
     random.shuffle(DIRS)
@@ -104,7 +173,7 @@ def calculate_broad_goals(state):
     for sector in state.map._sectors.values():
         if sector.top_left not in sectors_we_have:
             unit_collection_points[sector.top_left + (state.map.sector_size // 2, state.map.sector_size // 2)] = 1
-
+    
     total_requests = sum(unit_collection_points.values())
     if total_requests and len(available_units) >= total_requests + 2:
         extra_units_to_distribute = (len(available_units) - total_requests) // 2
@@ -240,13 +309,18 @@ def move_units(state, available_units, unit_directives):
     for unit, goal in unit_directives:
         if unit.location == goal:
             continue
-        direction = unit.location.direction_to(goal)
-        if unit.can_move(direction):
-            unit.queue_move(direction)
-        elif unit.can_move(direction.rotate_counter_clockwise_degrees(45)):
-            unit.queue_move(direction.rotate_counter_clockwise_degrees(45))
-        elif unit.can_move(direction.rotate_counter_clockwise_degrees(315)):
-            unit.queue_move(direction.rotate_counter_clockwise_degrees(315))
+        direction = a_star(state, unit.location, goal)
+        if len(direction) == 0:
+            direction = [unit.location.direction_to(goal)]
+    
+        
+        
+        if unit.can_move(direction[0]):
+            unit.queue_move(direction[0])
+        elif unit.can_move(direction[0].rotate_counter_clockwise_degrees(45)):
+            unit.queue_move(direction[0].rotate_counter_clockwise_degrees(45))
+        elif unit.can_move(direction[0].rotate_counter_clockwise_degrees(315)):
+            unit.queue_move(direction[0].rotate_counter_clockwise_degrees(315))
 
     # motion away from others if we haven't done anything else
     for unit in available_units:
