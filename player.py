@@ -40,11 +40,11 @@ def calculate_broad_goals(state):
                 sectors_we_have.add(state.map.sector_at(entity.location).top_left)
             else:
                 # goal: destroy this statue, by bringing units nearby and attacking the statue
-                unit_collection_points[entity.location] = 5
+                unit_collection_points[entity.location] = 4
                 attack_targets.add(entity.location)
         elif entity.type == battlecode.Entity.THROWER:
             if entity.team == state.my_team:
-                if entity.held_by is None:
+                if entity.held_by is None and entity.can_act:
                     available_units.append(entity)
                     units_by_sector[state.map.sector_at(entity.location).top_left].append(entity)
             else:
@@ -69,13 +69,31 @@ def calculate_broad_goals(state):
             if not build_queued:
                 unit_collection_points[sector.top_left + (state.map.sector_size // 2, state.map.sector_size // 2)] = 1
 
+    total_requests = sum(unit_collection_points.values())
+    if len(available_units) >= total_requests + 2:
+        extra_units_to_distribute = (len(available_units) - total_requests) // 2
+        uniform_extra_fraction = extra_units_to_distribute // total_requests
+        # allocate large blocks (update later)
+        extra_units_to_distribute -= uniform_extra_fraction * total_requests
+        # allocate small blocks
+        choices = []
+        for key, value in unit_collection_points.items():
+            choices += [key] * value
+        random.shuffle(choices)
+        # update large blocks
+        for key, value in unit_collection_points.items():
+            unit_collection_points[key] *= 1 + uniform_extra_fraction
+        # update small blocks
+        for choice in choices[:extra_units_to_distribute]:
+            unit_collection_points[key] += 1
+        assert sum(unit_collection_points.values()) == total_requests + (len(available_units) - total_requests) // 2
+
     return sectors_we_have, unit_collection_points, attack_targets, available_units, units_by_sector
 
 
 def plan_attacks(state, available_units, attack_targets):
     # attack loop
     for unit in available_units:
-        if not unit.can_act: continue
         if unit.holding is None:
             do_we_have_something_to_attack = False
             to_pick_up = None
