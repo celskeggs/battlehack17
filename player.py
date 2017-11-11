@@ -1,11 +1,9 @@
 import battlecode
 from battlecode import Direction
 from battlecode import Location
-from queue import PriorityQueue
+# from queue import PriorityQueue
 import time
 import random
-game = battlecode.Game('player')
-start = time.clock()
 
 DIRS = [Direction.SOUTH_WEST, Direction.SOUTH,
                 Direction.SOUTH_EAST, Direction.EAST,
@@ -44,21 +42,68 @@ def gen_map(state):
                             board[i][j] = False
     return board
 
-def gen_zoning(board):
-    zone = [[False for x in range(state.map.height)] for y in range(state.map.width)]
-    for i in range(1, len(board) - 1):
-        for j in range(1, len(board[0]) - 1):
-            if board[i][j]:
-                zone[i][j] = True
-                zone[i+1][j] = True
-                zone[i-1][j] = True
-                zone[i][j+1] = True
-                zone[i][j-1] = True
-                zone[i+1][j+1] = True
-                zone[i-1][j-1] = True
-                zone[i+1][j-1] = True
-                zone[i-1][j+1] = True
+def gen_zoning(state, board):
+    zone = [[False for y in range(state.map.height)] for x in range(state.map.width)]
+    remain = [(x,y) for x in range(state.map.width) for y in range(state.map.height) if board[x][y]]
+    while remain:
+        to_traverse = [remain.pop()]
+        min_x, min_y, max_x, max_y = to_traverse[0] * 2
+        while to_traverse:
+            x, y = to_traverse.pop()
+            for adjx, adjy in [(x,y+1),(x,y-1),(x+1,y),(x-1,y)]:
+                if (adjx, adjy) in remain:
+                    to_traverse.append((adjx, adjy))
+                    remain.remove((adjx, adjy))
+            if x < min_x: min_x = x
+            if y < min_y: min_y = y
+            if x > max_x: max_x = x
+            if y > max_y: max_y = y
+        if min_x < 1: min_x = 1
+        if min_y < 1: min_x = 1
+        if max_x >= state.map.width - 1: max_x = state.map.width - 2
+        if max_y >= state.map.height - 1: max_y = state.map.height - 2
+        for x in range(min_x - 1, max_x + 2):
+            for y in range(min_y - 1, max_y + 2):
+                zone[x][y] = True
+#    for i in range(1, len(board) - 1):
+#        for j in range(1, len(board[0]) - 1):
+#            if board[i][j]:
+#                zone[i][j] = True
+#                zone[i+1][j] = True
+#                zone[i-1][j] = True
+#                zone[i][j+1] = True
+#                zone[i][j-1] = True
+#                zone[i+1][j+1] = True
+#                zone[i-1][j-1] = True
+#                zone[i+1][j-1] = True
+#                zone[i-1][j+1] = True
     return zone
+
+class BinQueue:
+    def __init__(self):
+        self.bins = [[]]
+        self.smallest_bin = 0
+
+    def put(self, value, priority):
+        assert priority >= 0
+        if priority < self.smallest_bin:
+            self.smallest_bin = priority
+        while len(self.bins) < priority + 1:
+            self.bins.append([])
+        self.bins[priority].append(value)
+
+    def empty(self):
+        while not self.bins[self.smallest_bin]:
+            if len(self.bins) <= self.smallest_bin + 1:
+                return True
+            else:
+                self.smallest_bin += 1
+        return False
+
+    def get(self):
+        if self.empty():  # also advances to filled bin
+            raise Exception("empty")
+        return self.bins[self.smallest_bin].pop()
 
 #Takes a state, a starting location, and an ending location, and finds the fastest path
 #around obstacles to get between the two. Returns an empty list if the location is inaccessible
@@ -77,7 +122,7 @@ def a_star(state, start, end, board):
     came_from = {}
     cost_so_far = {}
     direction_from = {}
-    frontier = PriorityQueue()
+    frontier = BinQueue()
     start_point = (start.x, start.y)
     frontier.put(start_point, 0)
     came_from[start_point] = None
@@ -358,11 +403,11 @@ def assign_units_to_goals(state, unit_collection_points):
 
 def move_units(state, available_units, unit_directives, board):
     # have units actually move
-    zone = gen_zoning(board)
+    zone = gen_zoning(state, board)
     for unit, goal in unit_directives:
         if unit.location == goal:
             continue
-        
+
         if zone[unit.location.x][unit.location.y]:
             direction = a_star(state, unit.location, goal, board)
             if len(direction) == 0:
@@ -386,23 +431,26 @@ def move_units(state, available_units, unit_directives, board):
                     if unit.can_move(direction):
                         unit.queue_move(direction)
 
-loop_start = time.time()
-
-for state in game.turns():
-    board = gen_map(state)
-    last_start = loop_start
+if __name__ == "__main__":
+    game = battlecode.Game('player')
+    start = time.clock()
     loop_start = time.time()
-    sectors_we_have, unit_collection_points, attack_targets, available_units, units_by_sector = calculate_broad_goals(state)
 
-    plan_attacks(state, available_units, attack_targets)
+    for state in game.turns():
+        board = gen_map(state)
+        last_start = loop_start
+        loop_start = time.time()
+        sectors_we_have, unit_collection_points, attack_targets, available_units, units_by_sector = calculate_broad_goals(state)
 
-    unit_directives = assign_units_to_goals(state, unit_collection_points)
+        plan_attacks(state, available_units, attack_targets)
 
-    move_units(state, available_units, unit_directives, board)
-    loop_end = time.time()
-#    print((loop_end - loop_start) * 1000, "\t", (loop_start - last_start) * 1000, "\t", state.turn)
+        unit_directives = assign_units_to_goals(state, unit_collection_points)
 
-end = time.clock()
-print('clock time: '+str(end - start))
-print('per round: '+str((end - start) / 1000))
+        move_units(state, available_units, unit_directives, board)
+        loop_end = time.time()
+    #    print((loop_end - loop_start) * 1000, "\t", (loop_start - last_start) * 1000, "\t", state.turn)
+
+    end = time.clock()
+    print('clock time: '+str(end - start))
+    print('per round: '+str((end - start) / 1000))
 
