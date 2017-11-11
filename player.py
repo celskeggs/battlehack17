@@ -191,7 +191,8 @@ def plan_attacks(state, available_units, attack_targets):
                 assert unit.can_throw(hittable_final)
                 unit.queue_throw(hittable_final)
             elif move_away_from is not None:
-                unit.can_move(move_away_from.rotate_opposite())
+                if unit.can_move(move_away_from.rotate_opposite()):
+                    unit.queue_move(move_away_from.rotate_opposite())
             else:
                 strafe_dist = 1e3000
                 best_target = None
