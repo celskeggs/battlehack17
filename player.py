@@ -11,10 +11,58 @@ DIRS = [Direction.SOUTH_WEST, Direction.SOUTH,
                 Direction.SOUTH_EAST, Direction.EAST,
                 Direction.NORTH_EAST, Direction.NORTH,
                 Direction.NORTH_WEST, Direction.WEST]
+def greedy_cheater_helper(state, start, end):
+    assert state.map.location_on_map(start)
+    assert state.map.location_on_map(end)
+
+    directions = [Direction(1, 0), Direction(-1, 0), Direction(1, 0), Direction(-1, 0),
+                     Direction(-1, 1), Direction(1, 1), Direction(-1, -1), Direction(1, -1)]
+    if end in state.map._occupied:
+        for direction in directions:
+            if end.adjacent_location_in_direction(direction) not in state.map._occupied:
+                end = end.adjacent_location_in_direction(direction)
+                break
+
+    if(start == end):
+        return []
+
+    path = [start]
+
+def gen_map(state):
+    board = [[False for x in range(state.map.height)] for y in range(state.map.width)]
+    for i in range(state.map.width):
+        for j in range(state.map.height):
+            if Location(i, j) in state.map._occupied and not state.map._occupied[Location(i, j)].is_thrower:
+                board[i][j] = True
+    
+    for i in range(state.map.width):
+        for j in range(state.map.height):
+            if board[i][j]:
+                if i >= 1 and i <= state.map.width - 2:
+                    if j >= 1 and j <= state.map.height - 2:
+                        if not (board[i+1][j] or board[i-1][j] or board[i][j+1] or board[i][j-1]):
+                            board[i][j] = False
+    return board
+
+def gen_zoning(board):
+    zone = [[False for x in range(state.map.height)] for y in range(state.map.width)]
+    for i in range(1, len(board) - 1):
+        for j in range(1, len(board[0]) - 1):
+            if board[i][j]:
+                zone[i][j] = True
+                zone[i+1][j] = True
+                zone[i-1][j] = True
+                zone[i][j+1] = True
+                zone[i][j-1] = True
+                zone[i+1][j+1] = True
+                zone[i-1][j-1] = True
+                zone[i+1][j-1] = True
+                zone[i-1][j+1] = True
+    return zone
 
 #Takes a state, a starting location, and an ending location, and finds the fastest path
 #around obstacles to get between the two. Returns an empty list if the location is inaccessible
-def a_star(state, start, end):
+def a_star(state, start, end, board):
     assert state.map.location_on_map(start)
     assert state.map.location_on_map(end)
     directions = [Direction(1, 0), Direction(-1, 0), Direction(1, 0), Direction(-1, 0),
@@ -32,10 +80,11 @@ def a_star(state, start, end):
     cost_so_far = {}
     direction_from = {}
     frontier = PriorityQueue()
-    frontier.put(start, 0)
-    came_from[start] = None
-    direction_from[start]  = None
-    cost_so_far[start] = 0
+    start_point = (start.x, start.y)
+    frontier.put(start_point, 0)
+    came_from[start_point] = None
+    direction_from[start_point]  = None
+    cost_so_far[start_point] = 0
     found = False
 
     while not frontier.empty():
@@ -44,27 +93,28 @@ def a_star(state, start, end):
         if pos == end:
             found = True
             break
-        cur_x = pos.x
-        cur_y = pos.y
-        north = Location(cur_x, cur_y + 1)
-        south = Location(cur_x, cur_y - 1)
-        east = Location(cur_x + 1, cur_y)
-        west = Location(cur_x - 1, cur_y)
-        north_west = Location(cur_x - 1, cur_y + 1)
-        north_east = Location(cur_x + 1, cur_y + 1)
-        south_west = Location(cur_x - 1, cur_y + 1)
-        south_east = Location(cur_x + 1, cur_y - 1)
+        cur_x = pos[0]
+        cur_y = pos[1]
+        north = (cur_x, cur_y + 1)
+        south = (cur_x, cur_y - 1)
+        east = (cur_x + 1, cur_y)
+        west = (cur_x - 1, cur_y)
+        north_west =(cur_x - 1, cur_y + 1)
+        north_east =(cur_x + 1, cur_y + 1)
+        south_west =(cur_x - 1, cur_y + 1)
+        south_east =(cur_x + 1, cur_y - 1)
         locations = [(north, Direction(1, 0)), (south, Direction(-1, 0)), (east, Direction(1, 0)), (west, Direction(-1, 0)),
                      (north_west, Direction(-1, 1)), (north_east, Direction(1, 1)), (south_west, Direction(-1, -1)), (south_east, Direction(1, -1))]
 
         for place, direction in locations:
-            if place in state.map._occupied and not state.map._occupied[place].is_thrower:
-               continue
-            if state.map.location_on_map(place):
+            
+            if 0 < place[0] < state.map.width and 0 < place[1] < state.map.height :
+                if board[place[0]][place[1]]:
+                    continue
                 new_cost = cost_so_far[pos] + 1 
                 if place not in cost_so_far or new_cost < cost_so_far[place]:
                     cost_so_far[place] = new_cost
-                    priority = new_cost + max(abs(place.x - end.x), abs(place.y - end.y))
+                    priority = new_cost + max(abs(place[0] - end.x), abs(place[1]- end.y))
                     frontier.put(place, priority)
                     came_from[place] = pos
                     direction_from[place] = direction
@@ -304,17 +354,20 @@ def assign_units_to_goals(state, unit_collection_points):
     return unit_directives
 
 
-def move_units(state, available_units, unit_directives):
+def move_units(state, available_units, unit_directives, board):
     # have units actually move
+    zone = gen_zoning(board)
     for unit, goal in unit_directives:
         if unit.location == goal:
             continue
-        direction = a_star(state, unit.location, goal)
-        if len(direction) == 0:
+        
+        if zone[unit.location.x][unit.location.y]:
+            direction = a_star(state, unit.location, goal, board)
+            if len(direction) == 0:
+                direction = [unit.location.direction_to(goal)]
+        else:
             direction = [unit.location.direction_to(goal)]
-    
-        
-        
+
         if unit.can_move(direction[0]):
             unit.queue_move(direction[0])
         elif unit.can_move(direction[0].rotate_counter_clockwise_degrees(45)):
@@ -334,6 +387,7 @@ def move_units(state, available_units, unit_directives):
 loop_start = time.time()
 
 for state in game.turns():
+    board = gen_map(state)
     last_start = loop_start
     loop_start = time.time()
     sectors_we_have, unit_collection_points, attack_targets, available_units, units_by_sector = calculate_broad_goals(state)
@@ -342,7 +396,7 @@ for state in game.turns():
 
     unit_directives = assign_units_to_goals(state, unit_collection_points)
 
-    move_units(state, available_units, unit_directives)
+    move_units(state, available_units, unit_directives, board)
     loop_end = time.time()
 #    print((loop_end - loop_start) * 1000, "\t", (loop_start - last_start) * 1000, "\t", state.turn)
 
